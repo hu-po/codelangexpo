@@ -1,0 +1,34 @@
+# General
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.swp
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Rust
+target/
+Cargo.lock
+
+# Go
+bin/
+*.exe
+
+# C++
+*.o
+*.obj
+*.out
+*.exe
+a.out
+build/
+
+# Editors/IDE
+.idea/
+.vscode/
+*.iml
