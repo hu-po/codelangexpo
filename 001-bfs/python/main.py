@@ -4,7 +4,32 @@ import sys
 # Minimal, didactic BFS on an implicit complete binary tree.
 # Nodes are 0..size-1; children are 2*i+1 and 2*i+2 if < size.
 
+# 0.0290s or 29ms
+# def bfs(size: int, target: int) -> bool:
+#     # base case
+#     if size == 0:
+#         return False
 
+#     # create queue, put root on it
+#     q = deque()
+#     q.append(0)
+
+#     while len(q) > 0:
+#         i = q.popleft()
+
+#         # we found target
+#         if i == target:
+#             return True
+
+#         # add leaf nodes to search queue
+#         for leaf in [2*i + 1, 2*i + 2]:
+#             if leaf <= size:
+#                 q.append(leaf)
+    
+#     return False
+    
+
+# 0.0312s or 25ms
 def bfs(size: int, target: int) -> bool:
     if size == 0:
         return False
