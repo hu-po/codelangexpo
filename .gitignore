@@ -33,3 +33,7 @@ build/
 .idea/
 .vscode/
 *.iml
+
+# Bench artifacts
+bench.png
+bench-*.png
