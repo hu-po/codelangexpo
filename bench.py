@@ -6,7 +6,7 @@ import subprocess
 import sys
 import time
 import re
-from typing import List, Optional
+from typing import List, Optional, Dict, Tuple
 
 
 def exe(name: str) -> str:
@@ -212,29 +212,69 @@ def run_all(problem, size, target, build=True, runs: int = 1):
 def main():
     ap = argparse.ArgumentParser(description="Benchmark harness to compare implementations across languages")
     ap.add_argument("--problem", default="001-bfs", help="problem directory (e.g., 001-bfs or 002-dfs)")
-    ap.add_argument("--size", type=int, default=100_000, help="number of nodes")
+    ap.add_argument("--size", type=int, default=100_000, help="number of nodes (used if --sizes not provided)")
+    ap.add_argument("--sizes", default="1000,2000,10000", help="comma-separated sizes or start:stop:step (inclusive stop)")
     ap.add_argument("--target", type=int, default=-1, help="value to find (default size-1)")
     ap.add_argument("--no-build", action="store_true", help="skip build steps and run existing binaries")
-    ap.add_argument("--runs", type=int, default=1, help="number of times to run each language implementation")
+    ap.add_argument("--runs", type=int, default=5, help="number of times to run each language implementation")
     ap.add_argument("--plot", default="bench.png", help="output PNG file path for scatter plot of per-run times")
     args = ap.parse_args()
 
-    target = args.target if args.target >= 0 else (args.size - 1 if args.size > 0 else 0)
+    def parse_sizes(s: str) -> List[int]:
+        s = s.strip()
+        if not s:
+            return []
+        if ":" in s:
+            parts = s.split(":")
+            if len(parts) not in (2, 3):
+                return []
+            start = int(parts[0])
+            stop = int(parts[1])
+            step = int(parts[2]) if len(parts) == 3 else 1
+            if step == 0:
+                step = 1
+            if start <= stop:
+                vals = list(range(start, stop + 1, step))
+            else:
+                vals = list(range(start, stop - 1, -abs(step)))
+            return [max(0, v) for v in vals]
+        # comma separated
+        vals: List[int] = []
+        for tok in s.split(','):
+            tok = tok.strip()
+            if not tok:
+                continue
+            try:
+                vals.append(max(0, int(tok)))
+            except ValueError:
+                pass
+        return vals
 
-    results = run_all(args.problem, args.size, target, build=(not args.no_build), runs=max(1, args.runs))
+    sizes = parse_sizes(args.sizes)
+    if not sizes:
+        sizes = [args.size]
 
-    print("\n=== Benchmark Summary ===")
-    for r in results:
-        lang = r["lang"]
-        ok = "ok" if r["ok"] else "FAIL"
-        t = (f"{r['time']:.4f}s" if isinstance(r["time"], float) else "-")
-        msg = r["message"]
-        if len(msg) > 120:
-            msg = msg[:117] + "..."
-        print(f"{lang:10} | {ok:4} | {t:>8} | {msg}")
+    did_build = False
+    all_results: List[Tuple[int, List[Dict]]] = []
+    for sz in sizes:
+        target = args.target if args.target >= 0 else (sz - 1 if sz > 0 else 0)
+        build_now = (not did_build) and (not args.no_build)
+        results = run_all(args.problem, sz, target, build=build_now, runs=max(1, args.runs))
+        did_build = did_build or build_now
+        all_results.append((sz, results))
 
-    # Save scatter plot of per-run times if possible
-    def save_scatter(results, path, title):
+        print(f"\n=== Benchmark Summary (size={sz}, target={target}) ===")
+        for r in results:
+            lang = r["lang"]
+            ok = "ok" if r["ok"] else "FAIL"
+            t = (f"{r['time']:.4f}s" if isinstance(r["time"], float) else "-")
+            msg = r["message"]
+            if len(msg) > 120:
+                msg = msg[:117] + "..."
+            print(f"{lang:10} | {ok:4} | {t:>8} | {msg}")
+
+    # Save scatter plots
+    def save_scatter_runs(results, path, title):
         try:
             import matplotlib
             matplotlib.use("Agg")  # non-interactive backend
@@ -272,9 +312,51 @@ def main():
         except Exception as e:
             print(f"plot: failed to save {path}: {e}")
             return False
+    def save_scatter_sizes(all_results: List[Tuple[int, List[Dict]]], path, title):
+        try:
+            import matplotlib
+            matplotlib.use("Agg")  # non-interactive backend
+            import matplotlib.pyplot as plt
+        except Exception as e:
+            print(f"plot: unable to import matplotlib: {e}")
+            return False
+        per_lang: Dict[str, List[Tuple[int, float]]] = {"rust": [], "go": [], "cpp": [], "python": []}
+        for sz, results in all_results:
+            for r in results:
+                lang = r.get("lang")
+                if lang in per_lang and r.get("times"):
+                    for t in r["times"]:
+                        per_lang[lang].append((sz, t))
+        any_points = any(len(v) > 0 for v in per_lang.values())
+        if not any_points:
+            print("plot: no per-run timing data available across sizes")
+            return False
+        plt.figure(figsize=(8, 4.5))
+        for lang, pts in per_lang.items():
+            if not pts:
+                continue
+            xs = [p[0] for p in pts]
+            ys = [p[1] for p in pts]
+            plt.scatter(xs, ys, label=lang, s=18)
+        plt.xlabel("size")
+        plt.ylabel("time (s)")
+        plt.title(title)
+        plt.legend()
+        plt.grid(True, alpha=0.25)
+        try:
+            plt.tight_layout()
+            plt.savefig(path, dpi=150)
+            print(f"plot: saved scatter to {path}")
+            return True
+        except Exception as e:
+            print(f"plot: failed to save {path}: {e}")
+            return False
 
-    title = f"{args.problem} size={args.size} target={target} runs={max(1, args.runs)}"
-    save_scatter(results, args.plot, title)
+    title = f"{args.problem} runs={max(1, args.runs)}"
+    if len(sizes) > 1:
+        save_scatter_sizes(all_results, args.plot, title)
+    else:
+        save_scatter_runs(all_results[0][1], args.plot, f"{title} size={sizes[0]}")
 
 
 if __name__ == "__main__":
